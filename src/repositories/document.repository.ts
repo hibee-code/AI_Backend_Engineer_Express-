@@ -11,8 +11,17 @@ export const documentRepository = {
     return prisma.document.findUnique({ where: { id } });
   },
 
-  listByUser(userId: string) {
-    return prisma.document.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } });
+  listByUser(userId: string, opts: { skip: number; take: number; status?: DocumentStatus }) {
+    return prisma.document.findMany({
+      where: { userId, status: opts.status },
+      orderBy: { createdAt: 'desc' },
+      skip: opts.skip,
+      take: opts.take,
+    });
+  },
+
+  countByUser(userId: string, status?: DocumentStatus) {
+    return prisma.document.count({ where: { userId, status } });
   },
 
   updateStatus(id: string, status: DocumentStatus) {

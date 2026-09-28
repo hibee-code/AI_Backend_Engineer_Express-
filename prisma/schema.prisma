@@ -23,6 +23,7 @@ model User {
   messages      Message[]
   conversations Conversation[]
   usageLogs     UsageLog[]
+  refreshTokens RefreshToken[]
 }
 
 model Document {
@@ -75,4 +76,17 @@ model UsageLog {
 
   @@index([userId, createdAt])
   @@index([action, createdAt])
+}
+
+// Refresh tokens are stored as SHA-256 hashes, never raw. Deleting a row revokes the token.
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique // SHA-256 hash of the actual token
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

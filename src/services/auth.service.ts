@@ -1,71 +1,164 @@
-import bcrypt from 'bcrypt';
-import jwt, { type SignOptions } from 'jsonwebtoken';
+import { prisma } from '../lib/prisma';
+import { hashPassword, verifyPassword } from '../lib/password';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../lib/token';
+import crypto from 'crypto';
 import type { User } from '../generated/prisma/client';
-import { AUTH_EVENTS, type LoginFailedEvent } from '../events/auth.events';
-import { config } from '../lib/config';
+import { AUTH_EVENTS } from '../events/auth.events';
 import { appEvents } from '../lib/events';
 import { AppError } from '../middleware/error-handler';
 import { userRepository } from '../repositories/user.repository';
 
-// Matches the string values stored in User.role
-export type Role = 'user' | 'admin';
-
-export interface AuthPayload {
-  sub: string;
-  role: Role;
-}
-
-// Strip the password hash before a user leaves the service layer
-export function toPublicUser({ passwordHash: _passwordHash, ...user }: User) {
-  return user;
-}
-
-export function signToken(payload: AuthPayload): string {
-  return jwt.sign(payload, config.JWT_ACCESS_SECRET, {
-    expiresIn: config.JWT_EXPIRES_IN as SignOptions['expiresIn'],
+// ── Register ────────────────────────────────────────────────
+export async function register(data: { name: string; email: string; password: string }) {
+  // Check if user already exists
+  const existing = await prisma.user.findUnique({
+    where: { email: data.email.toLowerCase().trim() },
   });
-}
-
-export function verifyToken(token: string): AuthPayload {
-  try {
-    const { sub, role } = jwt.verify(token, config.JWT_ACCESS_SECRET) as jwt.JwtPayload &
-      AuthPayload;
-    return { sub, role };
-  } catch {
-    throw new AppError(401, 'Invalid or expired token');
-  }
-}
-
-export async function register(name: string, email: string, password: string) {
-  if (await userRepository.findByEmail(email)) {
+  if (existing) {
     throw new AppError(409, 'Email already registered');
   }
 
-  const passwordHash = await bcrypt.hash(password, config.BCRYPT_SALT_ROUNDS);
-  const user = await userRepository.create({ name, email, passwordHash });
-  appEvents.emit(AUTH_EVENTS.USER_REGISTERED, { id: user.id, email: user.email, tier: user.tier });
+  const passwordHash = await hashPassword(data.password);
+  const user = await prisma.user.create({
+    data: {
+      name: data.name, // required by our schema
+      email: data.email.toLowerCase().trim(),
+      passwordHash,
+    },
+  });
+
+  // Emit and move on. Don't wait for listeners.
+  appEvents.emit(AUTH_EVENTS.USER_REGISTERED, {
+    id: user.id,
+    email: user.email,
+    tier: user.tier,
+  });
+
+  // Don't return the hash
+  return { id: user.id, email: user.email, tier: user.tier };
+}
+
+// ── Login ─────────────────────────────────────────────────
+export async function login(data: { email: string; password: string; deviceInfo?: string }) {
+  const user = await prisma.user.findUnique({
+    where: { email: data.email.toLowerCase().trim() },
+  });
+
+  // Same error for "user not found" and "wrong password"
+  // This prevents user enumeration attacks
+  if (!user || !user.isActive) {
+    // Emit the failure event before throwing
+    appEvents.emit(AUTH_EVENTS.LOGIN_FAILED, {
+      email: data.email,
+      deviceInfo: data.deviceInfo,
+      reason: 'user_not_found',
+    });
+    throw new AppError(401, 'Invalid credentials');
+  }
+
+  const valid = await verifyPassword(data.password, user.passwordHash);
+  if (!valid) {
+    appEvents.emit(AUTH_EVENTS.LOGIN_FAILED, {
+      email: data.email,
+      deviceInfo: data.deviceInfo,
+      reason: 'wrong_password',
+    });
+    throw new AppError(401, 'Invalid credentials');
+  }
+
+  // Generate tokens
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
+
+  // Store the refresh token hash (never store the raw token)
+  const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
+
+  await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: tokenHash,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  // Emit success event
+  appEvents.emit(AUTH_EVENTS.USER_LOGGED_IN, {
+    userId: user.id,
+    deviceInfo: data.deviceInfo,
+  });
 
   return {
-    user: toPublicUser(user),
-    token: signToken({ sub: user.id, role: user.role as Role }),
+    accessToken,
+    refreshToken,
+    user: { id: user.id, email: user.email, tier: user.tier },
   };
 }
 
-export async function login(email: string, password: string, deviceInfo?: string) {
-  const fail = (reason: LoginFailedEvent['reason'], userId?: string): never => {
-    appEvents.emit(AUTH_EVENTS.LOGIN_FAILED, { email, reason, userId, deviceInfo });
-    throw new AppError(401, 'Invalid email or password');
-  };
-
-  const user = await userRepository.findByEmail(email);
-  if (!user) return fail('unknown_email');
-  if (!user.isActive || user.deletedAt) return fail('inactive_account', user.id);
-  if (!(await bcrypt.compare(password, user.passwordHash))) {
-    return fail('invalid_password', user.id);
+// ── Refresh ───────────────────────────────────────────────
+export async function refresh(rawRefreshToken: string) {
+  // Verify the JWT signature and expiration
+  let payload;
+  try {
+    payload = verifyRefreshToken(rawRefreshToken);
+  } catch {
+    throw new AppError(401, 'Invalid refresh token');
   }
 
-  appEvents.emit(AUTH_EVENTS.USER_LOGGED_IN, { userId: user.id, deviceInfo });
-  return { token: signToken({ sub: user.id, role: user.role as Role }) };
+  if (payload.type !== 'refresh') {
+    throw new AppError(401, 'Invalid token type');
+  }
+
+  // Check if this token exists in the database (not revoked)
+  const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+
+  const stored = await prisma.refreshToken.findUnique({
+    where: { token: tokenHash },
+  });
+
+  if (!stored || stored.expiresAt < new Date()) {
+    throw new AppError(401, 'Refresh token expired or revoked');
+  }
+
+  // Get the user
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+  });
+
+  if (!user || !user.isActive) {
+    throw new AppError(401, 'User not found or inactive');
+  }
+
+  // Rotate: delete the old token, create a new one
+  await prisma.refreshToken.delete({ where: { token: tokenHash } });
+
+  const newAccessToken = generateAccessToken(user);
+  const newRefreshToken = generateRefreshToken(user);
+  const newHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
+
+  await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: newHash,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+}
+
+// ── Logout ────────────────────────────────────────────────
+export async function logout(rawRefreshToken: string) {
+  const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
+
+  // Delete the token. If it doesn't exist, that's fine.
+  await prisma.refreshToken.deleteMany({
+    where: { token: tokenHash },
+  });
+}
+
+// ── Used by GET /api/auth/me and the admin routes (not part of the lesson) ──
+function toPublicUser({ passwordHash: _passwordHash, ...user }: User) {
+  return user;
 }
 
 export async function getCurrentUser(userId: string) {

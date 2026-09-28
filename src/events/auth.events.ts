@@ -1,79 +1,73 @@
 import { prisma } from '../lib/prisma';
 import { appEvents } from '../lib/events';
 
-// ── Define the event names as constants ─────────────
-export const AUTH_EVENTS = {
-    USER_REGISTERED: 'auth:user-registered',
-    USER_LOGGED_IN: 'auth:user-logged-in',
-    USER_LOGGED_OUT: 'auth:user-logged-out',
-    TOKEN_REFRESHED: 'auth:token-refreshed',
-    LOGIN_FAILED: 'auth:login-failed',
-} as const;
+// Event names and payload types live in auth.types.ts (no imports, so lib/events.ts
+// can use them without a circular import). Re-exported so callers import from here.
+import { AUTH_EVENTS } from './auth.types';
+export * from './auth.types';
 
-    // ── Register listeners ─────────────────────────────
+// ── Register listeners ─────────────────────────────
 // Listener 1: Log signups for analytics
 
 appEvents.on(AUTH_EVENTS.USER_REGISTERED, async (user) => {
-    try {
-        await prisma.usageLog.create({
-            data: {
-                userId: user.id,
-                action: 'signup',
-                tokens: 0,
-                costUsd: 0,
-                metadata: JSON.stringify({
-                    email: user.email,
-                    tier: user.tier,
-                    registeredAt: new Date().toISOString(),
-                }),
-            },
-        });
-    } catch (error) {
-// Log but don't crash. This is a side effect.
+  try {
+    await prisma.usageLog.create({
+      data: {
+        userId: user.id,
+        action: 'signup',
+        tokens: 0,
+        costUsd: 0,
+        metadata: JSON.stringify({
+          email: user.email,
+          tier: user.tier,
+          registeredAt: new Date().toISOString(),
+        }),
+      },
+    });
+  } catch (error) {
+    // Log but don't crash. This is a side effect.
     console.error('Failed to log signup:', error);
-}
+  }
 });
 
 // Listener 2: Create a default welcome conversation
 appEvents.on(AUTH_EVENTS.USER_REGISTERED, async (user) => {
-    try {
-        await prisma.conversation.create({
-            data: {
-                userId: user.id,
-                title: 'Welcome to DocuChat',
-            },
-        });
-    } catch (error) {
-        console.error('Failed to create welcome conversation:', error);
-    }
+  try {
+    await prisma.conversation.create({
+      data: {
+        userId: user.id,
+        title: 'Welcome to DocuChat',
+      },
+    });
+  } catch (error) {
+    console.error('Failed to create welcome conversation:', error);
+  }
 });
 // Listener 3: Log login events (useful for security audits)
 appEvents.on(AUTH_EVENTS.USER_LOGGED_IN, async (data) => {
-    try {
-        await prisma.usageLog.create({
-            data: {
-                userId: data.userId,
-                action: 'login',
-                tokens: 0,
-                costUsd: 0,
-                metadata: JSON.stringify({
-                    deviceInfo: data.deviceInfo,
-                    loginAt: new Date().toISOString(),
-                }),
-            },
-        });
-    } catch (error) {
-        console.error('Failed to log login:', error);
-}
+  try {
+    await prisma.usageLog.create({
+      data: {
+        userId: data.userId,
+        action: 'login',
+        tokens: 0,
+        costUsd: 0,
+        metadata: JSON.stringify({
+          deviceInfo: data.deviceInfo,
+          loginAt: new Date().toISOString(),
+        }),
+      },
+    });
+  } catch (error) {
+    console.error('Failed to log login:', error);
+  }
 });
 // Listener 4: Track failed login attempts
 appEvents.on(AUTH_EVENTS.LOGIN_FAILED, async (data) => {
-try {
-    console.warn(
-        `Failed login attempt for ${data.email} from ${data.deviceInfo}`
-    );
-// In Week 3 we'll add rate limiting based on failed attempts
+  try {
+    console.warn(`Failed login attempt for ${data.email} from ${data.deviceInfo}`);
+    // In Week 3 we'll add rate limiting based on failed attempts
   } catch (error) {
     console.error('Failed to log failed login:', error);
-}
+  }
 });

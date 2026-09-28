@@ -28,8 +28,7 @@ export interface UserSessionEvent {
 
 export interface LoginFailedEvent {
   email: string;
-  reason: 'unknown_email' | 'inactive_account' | 'invalid_password';
-  userId?: string; // present when the email belongs to a real account
+  reason: 'user_not_found' | 'wrong_password';
   deviceInfo?: string;
 }
 

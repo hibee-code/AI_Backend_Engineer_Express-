@@ -9,9 +9,9 @@ export const sendMessageSchema = z.object({
 type SendMessage = z.infer<typeof sendMessageSchema>;
 
 export async function send(req: Request<unknown, unknown, SendMessage>, res: Response) {
-  res.status(201).json(await chatService.sendMessage(req.user!.sub, req.body.content));
+  res.status(201).json(await chatService.sendMessage(req.user!.id, req.body.content));
 }
 
 export async function history(req: Request, res: Response) {
-  res.json(await chatService.getHistory(req.user!.sub));
+  res.json(await chatService.getHistory(req.user!.id));
 }

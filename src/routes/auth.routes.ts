@@ -1,14 +1,46 @@
 import { Router } from 'express';
-import * as authController from '../controllers/auth.controller';
-import { authenticate } from '../middleware/authenticate';
-import { validate } from '../middleware/validate';
+import * as authService from '../services/auth.service';
 
-export const authRouter = Router();
 
-authRouter.post(
-  '/register',
-  validate({ body: authController.registerSchema }),
-  authController.register,
-);
-authRouter.post('/login', validate({ body: authController.loginSchema }), authController.login);
-authRouter.get('/me', authenticate, authController.me);
+const router = Router();
+
+router.post('/register', async (req, res, next) => {
+  try {
+    const user = await authService.register(req.body);
+    res.status(201).json({ user });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/login', async (req, res, next) => {
+  try {
+    const result = await authService.login({
+      ...req.body,
+      deviceInfo: req.headers['user-agent'],
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const result = await authService.refresh(req.body.refreshToken);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/logout', async (req, res, next) => {
+  try {
+    await authService.logout(req.body.refreshToken);
+    res.json({ message: 'Logged out' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;

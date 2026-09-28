@@ -1,12 +1,15 @@
-import type { RequestHandler } from 'express';
-import type { Role } from '../services/auth.service';
-import { AppError } from './error-handler';
+import { Request, Response, NextFunction } from 'express';
 
-/** Must run after `authenticate`. */
-export const authorize =
-  (...roles: Role[]): RequestHandler =>
-  (req, _res, next) => {
-    if (!req.user) throw new AppError(401, 'Not authenticated');
-    if (!roles.includes(req.user.role)) throw new AppError(403, 'Forbidden');
+
+export function authorize(...allowedRoles: string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
     next();
   };
+}
+
