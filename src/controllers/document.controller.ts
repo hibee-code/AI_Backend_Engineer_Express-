@@ -1,6 +1,5 @@
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
-import type { DocumentStatus } from '../repositories/document.repository';
 import * as documentService from '../services/document.service';
 import type {
   createDocumentSchema,
@@ -20,15 +19,19 @@ export async function listDocuments(req: Request, res: Response) {
   const result = await documentService.listDocuments(req.user!.id, {
     page,
     limit,
-    // API accepts lowercase ("ready"); the database stores uppercase ("READY")
-    status: status?.toUpperCase() as DocumentStatus | undefined,
+    status,
   });
   res.json(result);
 }
 
 export async function createDocument(req: Request<unknown, unknown, CreateBody>, res: Response) {
-  const doc = await documentService.createDocument(req.user!.id, req.body.title, req.body.content);
-  res.status(201).json(doc);
+  const result = await documentService.createDocument({
+    userId: req.user!.id,
+    title: req.body.title,
+    content: req.body.content,
+  });
+  // 202 Accepted: the document is saved but still being processed in the background
+  res.status(202).json(result);
 }
 
 export async function getDocument(req: Request<DocumentParams>, res: Response) {

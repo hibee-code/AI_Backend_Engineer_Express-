@@ -1,9 +1,33 @@
+import { appEvents } from '../lib/events';
+import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware/error-handler';
+import { queueDocumentForProcessing } from '../queues/document.queue';
 import { documentRepository, type DocumentStatus } from '../repositories/document.repository';
 
-export async function createDocument(userId: string, title: string, content: string) {
-  // TODO: enqueue a job in src/jobs/ to chunk + embed (see embedding.service) and mark READY
-  return documentRepository.create({ userId, title, content });
+export async function createDocument(data: { title: string; content: string; userId: string }) {
+  // Create the document with pending status
+  const doc = await prisma.document.create({
+    data: {
+      userId: data.userId,
+      title: data.title,
+      filename: data.title.toLowerCase().replace(/\s+/g, '-'),
+      content: data.content,
+      status: 'pending',
+    },
+  });
+
+  // Queue for background processing
+  const jobId = await queueDocumentForProcessing(doc.id, data.userId);
+
+  appEvents.emit('doc:created', {
+    userId: data.userId,
+    documentId: doc.id,
+    title: doc.title,
+  });
+
+  // Return 202 Accepted (not 201 Created)
+  // The document exists but isn't ready yet
+  return { document: doc, jobId };
 }
 
 export async function listDocuments(

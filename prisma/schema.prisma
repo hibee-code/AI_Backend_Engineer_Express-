@@ -28,18 +28,35 @@ model User {
 }
 
 model Document {
-  id        String   @id @default(cuid())
-  userId    String
-  title     String
-  content   String
-  status    String   @default("PENDING")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  userId     String
+  title      String
+  filename   String?
+  content    String
+  status     String   @default("pending") // pending | processing | ready | failed
+  chunkCount Int      @default(0)
+  error      String? // Last processing error (set when status = failed)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks     Chunk[]
 
   @@index([userId])
   @@index([status])
   @@index([userId, status])
+}
+
+// A piece of a document, created by the document-processing worker.
+model Chunk {
+  id         String   @id @default(cuid())
+  documentId String
+  index      Int // Position within the document (0-based)
+  content    String
+  tokenCount Int
+  createdAt  DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, index])
 }
 
 model Message {

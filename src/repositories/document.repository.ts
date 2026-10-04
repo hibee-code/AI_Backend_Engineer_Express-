@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma';
 
-export type DocumentStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED';
+export type DocumentStatus = 'pending' | 'processing' | 'ready' | 'failed';
 
 export const documentRepository = {
   create(data: { userId: string; title: string; content: string }) {
