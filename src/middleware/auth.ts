@@ -6,7 +6,7 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      user?: { id: string; role: string };
+      user?: { id: string; role: string; tier: string };
     }
   }
 }
@@ -28,7 +28,7 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
     }
 
     // Attach user context to the request
-    req.user = { id: payload.sub, role: payload.role };
+    req.user = { id: payload.sub, role: payload.role, tier: payload.tier };
     next();
   } catch (error) {
     if ((error as Error).name === 'TokenExpiredError') {

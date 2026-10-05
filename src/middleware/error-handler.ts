@@ -14,6 +14,24 @@ export class AppError extends Error {
   }
 }
 
+// Scrub sensitive values from error details before responding
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function scrubSensitiveData(data: any): any {
+  if (typeof data !== 'string') return data;
+
+  const patterns = [
+    /Bearer [A-Za-z0-9\-._~+/]+=*/g, // JWT tokens
+    /sk-[A-Za-z0-9]{20,}/g, // OpenAI keys
+    /password["']?\s*[:=]\s*["']?[^"'\s,}]+/gi, // password in any format
+  ];
+
+  let scrubbed = data;
+  for (const pattern of patterns) {
+    scrubbed = scrubbed.replace(pattern, '[REDACTED]');
+  }
+  return scrubbed;
+}
+
 export const notFound: RequestHandler = (req, _res, next) => {
   next(new AppError(404, `Route not found: ${req.method} ${req.originalUrl}`));
 };
@@ -33,6 +51,8 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   logger.error({ err }, 'Unhandled error');
   res.status(500).json({
     error: 'Internal server error',
-    ...(config.NODE_ENV !== 'production' && { message: (err as Error).message }),
+    ...(config.NODE_ENV !== 'production' && {
+      message: scrubSensitiveData((err as Error).message),
+    }),
   });
 };

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { requirePermission } from '../middleware/permission';
+import { uploadLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validate';
 import { prisma } from '../lib/prisma';
 import { documentQueue } from '../queues/document.queue';
@@ -52,7 +53,13 @@ router.use(authenticate); // All document routes require auth
  */
 router.get('/', validate(listDocumentsSchema), listDocuments);
 
-router.post('/', validate(createDocumentSchema), createDocument);
+router.post(
+  '/',
+  uploadLimiter, // Upload-specific limit
+  requirePermission('documents:create'),
+  validate(createDocumentSchema),
+  createDocument,
+);
 
 router.get('/:id', validate(documentParamsSchema), getDocument);
 
