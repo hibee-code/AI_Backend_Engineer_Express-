@@ -11,22 +11,28 @@ export const AUTH_EVENTS = {
 } as const;
 
 // ── Event payloads ──────────────────────────────────
+// Every payload carries the correlationId of the request that triggered it,
+// so listener logs can be traced back to that request.
 export interface UserRegisteredEvent {
+  correlationId: string;
   id: string;
   email: string;
   tier: string;
 }
 
 export interface UserLoggedInEvent {
+  correlationId: string;
   userId: string;
   deviceInfo?: string;
 }
 
 export interface UserSessionEvent {
+  correlationId: string;
   userId: string;
 }
 
 export interface LoginFailedEvent {
+  correlationId: string;
   email: string;
   reason: 'user_not_found' | 'wrong_password';
   deviceInfo?: string;

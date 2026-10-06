@@ -6,10 +6,16 @@ import type { User } from '../generated/prisma/client';
 import { AUTH_EVENTS } from '../events/auth.events';
 import { appEvents } from '../lib/events';
 import { AppError } from '../middleware/error-handler';
+import { logger } from '../lib/logger';
 import { userRepository } from '../repositories/user.repository';
 
 // ── Register ────────────────────────────────────────────────
-export async function register(data: { name: string; email: string; password: string }) {
+export async function register(data: {
+  name: string;
+  email: string;
+  password: string;
+  correlationId: string;
+}) {
   // Check if user already exists
   const existing = await prisma.user.findUnique({
     where: { email: data.email.toLowerCase().trim() },
@@ -41,8 +47,11 @@ export async function register(data: { name: string; email: string; password: st
     });
   }
 
+  logger.info('User registered', { correlationId: data.correlationId, userId: user.id });
+
   // Emit and move on. Don't wait for listeners.
   appEvents.emit(AUTH_EVENTS.USER_REGISTERED, {
+    correlationId: data.correlationId,
     id: user.id,
     email: user.email,
     tier: user.tier,
@@ -53,7 +62,12 @@ export async function register(data: { name: string; email: string; password: st
 }
 
 // ── Login ─────────────────────────────────────────────────
-export async function login(data: { email: string; password: string; deviceInfo?: string }) {
+export async function login(data: {
+  email: string;
+  password: string;
+  deviceInfo?: string;
+  correlationId: string;
+}) {
   const user = await prisma.user.findUnique({
     where: { email: data.email.toLowerCase().trim() },
   });
@@ -63,6 +77,7 @@ export async function login(data: { email: string; password: string; deviceInfo?
   if (!user || !user.isActive) {
     // Emit the failure event before throwing
     appEvents.emit(AUTH_EVENTS.LOGIN_FAILED, {
+      correlationId: data.correlationId,
       email: data.email,
       deviceInfo: data.deviceInfo,
       reason: 'user_not_found',
@@ -73,6 +88,7 @@ export async function login(data: { email: string; password: string; deviceInfo?
   const valid = await verifyPassword(data.password, user.passwordHash);
   if (!valid) {
     appEvents.emit(AUTH_EVENTS.LOGIN_FAILED, {
+      correlationId: data.correlationId,
       email: data.email,
       deviceInfo: data.deviceInfo,
       reason: 'wrong_password',
@@ -95,8 +111,11 @@ export async function login(data: { email: string; password: string; deviceInfo?
     },
   });
 
+  logger.info('User logged in', { correlationId: data.correlationId, userId: user.id });
+
   // Emit success event
   appEvents.emit(AUTH_EVENTS.USER_LOGGED_IN, {
+    correlationId: data.correlationId,
     userId: user.id,
     deviceInfo: data.deviceInfo,
   });
@@ -109,7 +128,7 @@ export async function login(data: { email: string; password: string; deviceInfo?
 }
 
 // ── Refresh ───────────────────────────────────────────────
-export async function refresh(rawRefreshToken: string) {
+export async function refresh(rawRefreshToken: string, correlationId: string) {
   // Verify the JWT signature and expiration
   let payload;
   try {
@@ -157,17 +176,21 @@ export async function refresh(rawRefreshToken: string) {
     },
   });
 
+  logger.info('Refresh token rotated', { correlationId, userId: user.id });
+
   return { accessToken: newAccessToken, refreshToken: newRefreshToken };
 }
 
 // ── Logout ────────────────────────────────────────────────
-export async function logout(rawRefreshToken: string) {
+export async function logout(rawRefreshToken: string, correlationId: string) {
   const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
 
   // Delete the token. If it doesn't exist, that's fine.
-  await prisma.refreshToken.deleteMany({
+  const { count } = await prisma.refreshToken.deleteMany({
     where: { token: tokenHash },
   });
+
+  logger.info('User logged out', { correlationId, revokedTokens: count });
 }
 
 // ── Used by GET /api/auth/me and the admin routes (not part of the lesson) ──

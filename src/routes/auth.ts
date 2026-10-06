@@ -45,7 +45,10 @@ router.post(
   validate(z.object({ body: authController.registerSchema })),
   async (req, res, next) => {
     try {
-      const user = await authService.register(req.body);
+      const user = await authService.register({
+        ...req.body,
+        correlationId: req.correlationId,
+      });
       res.status(201).json({ user });
     } catch (error) {
       next(error);
@@ -61,6 +64,7 @@ router.post(
       const result = await authService.login({
         ...req.body,
         deviceInfo: req.headers['user-agent'],
+        correlationId: req.correlationId,
       });
       res.json(result);
     } catch (error) {
@@ -74,7 +78,7 @@ router.post(
   validate(z.object({ body: authController.refreshTokenSchema })),
   async (req, res, next) => {
     try {
-      const result = await authService.refresh(req.body.refreshToken);
+      const result = await authService.refresh(req.body.refreshToken, req.correlationId);
       res.json(result);
     } catch (error) {
       next(error);
@@ -87,7 +91,7 @@ router.post(
   validate(z.object({ body: authController.refreshTokenSchema })),
   async (req, res, next) => {
     try {
-      await authService.logout(req.body.refreshToken);
+      await authService.logout(req.body.refreshToken, req.correlationId);
       res.json({ message: 'Logged out' });
     } catch (error) {
       next(error);

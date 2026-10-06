@@ -4,9 +4,5 @@ import { logger } from './lib/logger';
 
 const PORT = config.PORT;
 app.listen(PORT, () => {
-  logger.info({
-    event: 'server:started',
-    port: PORT,
-    environment: config.NODE_ENV,
-  });
+  logger.info('Server started', { port: PORT, environment: config.NODE_ENV });
 });

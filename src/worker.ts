@@ -7,11 +7,11 @@ import { redisConnection } from './queues/connection';
 import { logger } from './lib/logger';
 import { prisma } from './lib/prisma';
 
-logger.info({ event: 'worker:started', queues: [worker.name, embeddingWorker.name] });
+logger.info('Worker started', { queues: [worker.name, embeddingWorker.name] });
 
 // Finish in-flight jobs before exiting so they aren't left half-processed
 async function shutdown(signal: string) {
-  logger.info({ event: 'worker:stopping', signal });
+  logger.info('Worker stopping', { signal });
   await Promise.all([worker.close(), embeddingWorker.close()]);
   await redisConnection.quit();
   await prisma.$disconnect();

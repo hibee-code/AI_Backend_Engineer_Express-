@@ -1,7 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError, z } from 'zod';
 import { config } from '../lib/config';
-import { logger } from '../lib/logger';
+import { logger, serializeError } from '../lib/logger';
 
 export class AppError extends Error {
   constructor(
@@ -37,7 +37,7 @@ export const notFound: RequestHandler = (req, _res, next) => {
 };
 
 // Express 5 forwards rejected promises from async handlers here automatically
-export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof AppError) {
     res.status(err.statusCode).json({ error: err.message, details: err.details });
     return;
@@ -48,7 +48,12 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  logger.error({ err }, 'Unhandled error');
+  logger.error('Unhandled error', {
+    correlationId: req.correlationId,
+    method: req.method,
+    path: req.path,
+    error: serializeError(err),
+  });
   res.status(500).json({
     error: 'Internal server error',
     ...(config.NODE_ENV !== 'production' && {

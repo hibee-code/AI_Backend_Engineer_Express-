@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { verifyWebhookSignature } from '../middleware/verifyWebhook';
 import { prisma } from '../lib/prisma';
+import { logger, serializeError } from '../lib/logger';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used once 'document.imported' is implemented
 import { documentQueue } from '../queues/document.queue';
 
@@ -41,27 +42,36 @@ router.post(
 
     // Queue the actual work
     try {
-      await processWebhookEvent(event);
+      await processWebhookEvent(event, req.correlationId);
       await prisma.webhookEvent.update({
         where: { id: event.id },
         data: { processedAt: new Date() },
       });
     } catch (error) {
-      console.error(`Webhook ${event.id} processing failed:`, error);
+      logger.error('Webhook processing failed', {
+        correlationId: req.correlationId,
+        webhookEventId: event.id,
+        eventType: event.type,
+        error: serializeError(error),
+      });
       // Don't mark processedAt. The provider will retry.
     }
   },
 );
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function processWebhookEvent(event: any) {
+async function processWebhookEvent(event: any, correlationId: string) {
   // Route to the right handler based on event type
   switch (event.type) {
     case 'document.imported':
       // Queue document processing
       break;
     default:
-      console.log(`Unhandled webhook event type: ${event.type}`);
+      logger.warn('Unhandled webhook event type', {
+        correlationId,
+        webhookEventId: event.id,
+        eventType: event.type,
+      });
   }
 }
 

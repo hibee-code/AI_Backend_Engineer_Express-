@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import { logger } from '../logger';
 
 export const openaiClient: AxiosInstance = axios.create({
   baseURL: 'https://api.openai.com/v1',
@@ -15,7 +16,7 @@ openaiClient.interceptors.request.use((config) => {
   const startTime = Date.now();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (config as any).metadata = { startTime };
-  console.log(`→ OpenAI ${config.method?.toUpperCase()} ${config.url}`);
+  logger.debug('OpenAI request started', { method: config.method?.toUpperCase(), url: config.url });
   return config;
 });
 
@@ -25,24 +26,37 @@ openaiClient.interceptors.response.use(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const startTime = (response.config as any).metadata?.startTime;
     const duration = startTime ? Date.now() - startTime : 0;
-    console.log(`← OpenAI ${response.status} ${response.config.url} (${duration}ms)`);
+    logger.info('OpenAI request completed', {
+      method: response.config.method?.toUpperCase(),
+      url: response.config.url,
+      statusCode: response.status,
+      durationMs: duration,
+    });
     return response;
   },
   (error) => {
     const startTime = error.config?.metadata?.startTime;
     const duration = startTime ? Date.now() - startTime : 0;
 
+    const logData = {
+      method: error.config?.method?.toUpperCase(),
+      url: error.config?.url,
+      durationMs: duration,
+    };
+
     if (error.response) {
-      // Server responded with error status
-      console.error(
-        `✕ OpenAI ${error.response.status} ${error.config?.url} (${duration}ms):`,
-        error.response.data,
-      );
+      // Server responded with error status. Log OpenAI's error object only,
+      // never the full body, which can echo back prompt content.
+      logger.error('OpenAI request failed', {
+        ...logData,
+        statusCode: error.response.status,
+        apiError: error.response.data?.error,
+      });
     } else if (error.request) {
       // No response received (timeout, network error)
-      console.error(`✕ OpenAI no response ${error.config?.url} (${duration}ms):`, error.message);
+      logger.error('OpenAI request got no response', { ...logData, error: error.message });
     } else {
-      console.error(`✕ OpenAI request setup error:`, error.message);
+      logger.error('OpenAI request setup failed', { ...logData, error: error.message });
     }
 
     return Promise.reject(error);
@@ -54,7 +68,7 @@ openaiClient.interceptors.response.use((response) => {
   const remaining = parseInt(response.headers['x-ratelimit-remaining-requests'] || '999');
 
   if (remaining < 50) {
-    console.warn(`OpenAI rate limit getting low: ${remaining} remaining`);
+    logger.warn('OpenAI rate limit running low', { remainingRequests: remaining });
   }
 
   return response;

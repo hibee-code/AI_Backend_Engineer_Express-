@@ -14,10 +14,17 @@ export const documentQueue = new Queue('document-processing', {
   },
 });
 
-export async function queueDocumentForProcessing(documentId: string, userId: string) {
+// correlationId travels in the job data so worker logs (a separate process)
+// can be traced back to the request that queued the job.
+export async function queueDocumentForProcessing(
+  documentId: string,
+  userId: string,
+  correlationId: string,
+) {
   const job = await documentQueue.add('process-document', {
     documentId,
     userId,
+    correlationId,
     queuedAt: Date.now(),
   });
   return job.id;

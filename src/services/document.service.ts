@@ -1,10 +1,16 @@
 import { appEvents } from '../lib/events';
+import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../middleware/error-handler';
 import { queueDocumentForProcessing } from '../queues/document.queue';
 import { documentRepository, type DocumentStatus } from '../repositories/document.repository';
 
-export async function createDocument(data: { title: string; content: string; userId: string }) {
+export async function createDocument(data: {
+  title: string;
+  content: string;
+  userId: string;
+  correlationId: string;
+}) {
   // Create the document with pending status
   const doc = await prisma.document.create({
     data: {
@@ -17,9 +23,19 @@ export async function createDocument(data: { title: string; content: string; use
   });
 
   // Queue for background processing
-  const jobId = await queueDocumentForProcessing(doc.id, data.userId);
+  const jobId = await queueDocumentForProcessing(doc.id, data.userId, data.correlationId);
+
+  logger.info('Document uploaded', {
+    correlationId: data.correlationId,
+    userId: data.userId,
+    documentId: doc.id,
+    title: doc.title,
+    fileSizeBytes: Buffer.byteLength(doc.content, 'utf8'),
+    jobId,
+  });
 
   appEvents.emit('doc:created', {
+    correlationId: data.correlationId,
     userId: data.userId,
     documentId: doc.id,
     title: doc.title,
@@ -48,9 +64,11 @@ export async function getDocument(userId: string, id: string) {
   return doc;
 }
 
-export async function deleteDocument(userId: string, id: string) {
+export async function deleteDocument(userId: string, id: string, correlationId: string) {
   await getDocument(userId, id);
   await documentRepository.delete(id);
+
+  logger.info('Document deleted', { correlationId, userId, documentId: id });
 }
 
 export function countDocuments() {

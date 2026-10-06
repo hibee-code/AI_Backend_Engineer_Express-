@@ -3,14 +3,21 @@ import { Worker, Job } from 'bullmq';
 import { redisConnection } from './connection';
 import { prisma } from '../lib/prisma';
 import { appEvents } from '../lib/events';
+import { logger, serializeError } from '../lib/logger';
 import { estimateTokens, splitIntoChunks } from '../lib/chunking';
 import { deadLetterQueue } from './dead-letter.queue';
 
 const worker = new Worker(
   'document-processing',
   async (job: Job) => {
-    const { documentId, userId } = job.data;
-    console.log(`Processing document ${documentId} (attempt ${job.attemptsMade + 1})`);
+    const { documentId, userId, correlationId } = job.data;
+    logger.info('Document processing started', {
+      correlationId,
+      jobId: job.id,
+      documentId,
+      userId,
+      attempt: job.attemptsMade + 1,
+    });
 
     // Step 1: Fetch the document content
     const doc = await prisma.document.findUniqueOrThrow({
@@ -55,6 +62,7 @@ const worker = new Worker(
 
       // Emit event for audit/notification
       appEvents.emit('doc:processed', {
+        correlationId,
         documentId,
         userId,
         chunkCount: chunks.length,
@@ -83,11 +91,22 @@ const worker = new Worker(
 
 // Event listeners for logging
 worker.on('completed', (job) => {
-  console.log(`Job ${job.id} completed: ${job.returnvalue?.chunks} chunks`);
+  logger.info('Document processing completed', {
+    correlationId: job.data.correlationId,
+    jobId: job.id,
+    documentId: job.data.documentId,
+    chunkCount: job.returnvalue?.chunks,
+  });
 });
 
 worker.on('failed', (job, error) => {
-  console.error(`Job ${job?.id} failed (attempt ${job?.attemptsMade}):`, error.message);
+  logger.warn('Document processing attempt failed', {
+    correlationId: job?.data.correlationId,
+    jobId: job?.id,
+    documentId: job?.data.documentId,
+    attempt: job?.attemptsMade,
+    error: error.message,
+  });
 });
 
 worker.on('failed', async (job, error) => {
@@ -95,7 +114,13 @@ worker.on('failed', async (job, error) => {
 
   // Check if all attempts exhausted
   if (job.attemptsMade >= (job.opts.attempts ?? 3)) {
-    console.error(`Job ${job.id} permanently failed. Moving to DLQ.`);
+    logger.error('Document processing permanently failed, moving to DLQ', {
+      correlationId: job.data.correlationId,
+      jobId: job.id,
+      documentId: job.data.documentId,
+      attempts: job.attemptsMade,
+      error: serializeError(error),
+    });
 
     await deadLetterQueue.add('failed-document', {
       originalJobId: job.id,
@@ -109,7 +134,7 @@ worker.on('failed', async (job, error) => {
 });
 
 worker.on('error', (error) => {
-  console.error('Worker error:', error);
+  logger.error('Document worker error', { error: serializeError(error) });
 });
 
 export { worker };

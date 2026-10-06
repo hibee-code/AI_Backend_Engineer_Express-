@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { cacheRedis } from '../lib/cache';
+import { logger } from '../lib/logger';
 
 export async function trackSuspiciousActivity(req: Request, res: Response, next: NextFunction) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,7 +18,12 @@ export async function trackSuspiciousActivity(req: Request, res: Response, next:
 
       const uniqueDocs = await cacheRedis.scard(key);
       if (uniqueDocs > 50) {
-        console.warn(`Suspicious: user ${userId} accessed ${uniqueDocs} unique documents in 5 min`);
+        logger.warn('Suspicious document access pattern', {
+          correlationId: req.correlationId,
+          userId,
+          uniqueDocuments: uniqueDocs,
+          windowSeconds: 300,
+        });
         // In production: emit event, alert admin, temporarily throttle
       }
     }

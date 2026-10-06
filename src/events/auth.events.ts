@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { appEvents } from '../lib/events';
+import { logger, serializeError } from '../lib/logger';
 
 // Event names and payload types live in auth.types.ts (no imports, so lib/events.ts
 // can use them without a circular import). Re-exported so callers import from here.
@@ -26,7 +27,11 @@ appEvents.on(AUTH_EVENTS.USER_REGISTERED, async (user) => {
     });
   } catch (error) {
     // Log but don't crash. This is a side effect.
-    console.error('Failed to log signup:', error);
+    logger.error('Failed to record signup', {
+      correlationId: user.correlationId,
+      userId: user.id,
+      error: serializeError(error),
+    });
   }
 });
 
@@ -40,7 +45,11 @@ appEvents.on(AUTH_EVENTS.USER_REGISTERED, async (user) => {
       },
     });
   } catch (error) {
-    console.error('Failed to create welcome conversation:', error);
+    logger.error('Failed to create welcome conversation', {
+      correlationId: user.correlationId,
+      userId: user.id,
+      error: serializeError(error),
+    });
   }
 });
 // Listener 3: Log login events (useful for security audits)
@@ -59,15 +68,27 @@ appEvents.on(AUTH_EVENTS.USER_LOGGED_IN, async (data) => {
       },
     });
   } catch (error) {
-    console.error('Failed to log login:', error);
+    logger.error('Failed to record login', {
+      correlationId: data.correlationId,
+      userId: data.userId,
+      error: serializeError(error),
+    });
   }
 });
 // Listener 4: Track failed login attempts
 appEvents.on(AUTH_EVENTS.LOGIN_FAILED, async (data) => {
   try {
-    console.warn(`Failed login attempt for ${data.email} from ${data.deviceInfo}`);
+    logger.warn('Failed login attempt', {
+      correlationId: data.correlationId,
+      email: data.email,
+      deviceInfo: data.deviceInfo,
+      reason: data.reason,
+    });
     // In Week 3 we'll add rate limiting based on failed attempts
   } catch (error) {
-    console.error('Failed to log failed login:', error);
+    logger.error('Failed to record failed login', {
+      correlationId: data.correlationId,
+      error: serializeError(error),
+    });
   }
 });

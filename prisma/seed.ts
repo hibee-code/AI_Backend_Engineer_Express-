@@ -1,4 +1,5 @@
 import type { Permission } from '../src/generated/prisma/client';
+import { logger, serializeError } from '../src/lib/logger';
 import { prisma } from '../src/lib/prisma';
 
 async function seedRBAC() {
@@ -115,7 +116,7 @@ async function seedRBAC() {
     }
   }
 
-  console.log('RBAC seeded: 3 roles, 9 permissions');
+  logger.info('RBAC seeded', { roles: 3, permissions: 9 });
 }
 
 async function main() {
@@ -124,7 +125,7 @@ async function main() {
 
 main()
   .catch((error) => {
-    console.error('Seed failed:', error);
+    logger.error('Seed failed', { error: serializeError(error) });
     process.exitCode = 1;
   })
   .finally(() => prisma.$disconnect());

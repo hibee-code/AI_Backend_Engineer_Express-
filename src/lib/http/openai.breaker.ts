@@ -1,4 +1,5 @@
 import CircuitBreaker from 'opossum';
+import { logger } from '../logger';
 import { openaiClient } from './openai.client';
 import { withRetry } from './retry';
 
@@ -27,9 +28,11 @@ openaiBreaker.fallback(() => {
 
 // Visibility into state changes
 openaiBreaker.on('open', () =>
-  console.warn('OpenAI circuit breaker OPENED — requests will fail fast'),
+  logger.error('OpenAI circuit breaker opened, requests will fail fast', { breaker: 'openai' }),
 );
 openaiBreaker.on('halfOpen', () =>
-  console.warn('OpenAI circuit breaker HALF-OPEN — testing recovery'),
+  logger.warn('OpenAI circuit breaker half-open, testing recovery', { breaker: 'openai' }),
 );
-openaiBreaker.on('close', () => console.log('OpenAI circuit breaker CLOSED — normal operation'));
+openaiBreaker.on('close', () =>
+  logger.info('OpenAI circuit breaker closed, normal operation', { breaker: 'openai' }),
+);

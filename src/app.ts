@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { config } from './lib/config';
-import { logger } from './lib/logger';
 import { errorHandler } from './middleware/error-handler';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
@@ -10,12 +9,16 @@ import './events/auth.events';
 import adminRoutes from './routes/admin';
 import authRoutes from './routes/auth';
 import documentRoutes from './routes/documents';
+import healthRoutes from './routes/health';
 import './queues/document.worker';
 import { bullBoardAdapter } from './config/bull-board';
 import { verifyWebhookSignature } from './middleware/verifyWebhook';
 import './events/cache.events';
 import './events/security.events';
 import { sanitizeInput } from './middleware/sanitize';
+import { requestLogger } from './middleware/requestLogger';
+import { metricsRegistry } from './lib/metrics';
+import { metricsMiddleware } from './middleware/metricsMiddleware';
 
 
 
@@ -37,20 +40,14 @@ app.use(helmet({
 // styleSrc: ["'self'", "'unsafe-inline'"],
 },
 },
+
 })); // Security headers
+
+app.use(requestLogger);
+app.use(metricsMiddleware); // Request count + latency for Prometheus
 app.use(cors()); // Cross-origin requests
 app.use(express.json()); // Parse JSON request bodies
-
-// === REQUEST LOGGING ===
-app.use((req, res, next) => {
-  logger.info({
-    method: req.method,
-    url: req.url,
-    ip: req.ip,
-  });
-  next();
-});
-
+app.use(healthRoutes);
 // Capture raw body for webhook routes BEFORE express.json()
 const secret = process.env.WEBHOOK_SECRET ?? '';
 app.use(
@@ -93,6 +90,12 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: config.NODE_ENV,
   });
+});
+
+// === METRICS (no auth — Prometheus needs to scrape it) ===
+app.get('/metrics', async (req, res) => {
+  res.set('Content-Type', metricsRegistry.contentType);
+  res.send(await metricsRegistry.metrics());
 });
 
 app.use(express.json());

@@ -29,6 +29,7 @@ export async function createDocument(req: Request<unknown, unknown, CreateBody>,
     userId: req.user!.id,
     title: req.body.title,
     content: req.body.content,
+    correlationId: req.correlationId,
   });
   // 202 Accepted: the document is saved but still being processed in the background
   res.status(202).json(result);
@@ -39,6 +40,6 @@ export async function getDocument(req: Request<DocumentParams>, res: Response) {
 }
 
 export async function deleteDocument(req: Request<DocumentParams>, res: Response) {
-  await documentService.deleteDocument(req.user!.id, req.params.id);
+  await documentService.deleteDocument(req.user!.id, req.params.id, req.correlationId);
   res.status(204).end();
 }
