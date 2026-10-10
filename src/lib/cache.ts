@@ -20,8 +20,7 @@ export const CACHE_TTL = {
   RAG_RESULT: 3600, // 1 hour
 } as const;
 
-export async function cacheGet<T>(key: string): Promise<T | null> {
-  const raw = await cacheRedis.get(key);
+function parseCached<T>(raw: string | null): T | null {
   if (!raw) return null;
 
   try {
@@ -31,6 +30,17 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   }
 }
 
+export async function cacheGet<T>(key: string): Promise<T | null> {
+  return parseCached<T>(await cacheRedis.get(key));
+}
+
+// One round trip for many keys. Results line up with `keys`; misses are null.
+export async function cacheGetMany<T>(keys: string[]): Promise<(T | null)[]> {
+  if (keys.length === 0) return [];
+  const raws = await cacheRedis.mget(...keys);
+  return raws.map((raw) => parseCached<T>(raw));
+}
+
 export async function cacheSet(
   key: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,6 +48,19 @@ export async function cacheSet(
   ttlSeconds: number,
 ): Promise<void> {
   await cacheRedis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+}
+
+// One round trip for many writes
+export async function cacheSetMany(
+  entries: { key: string; value: unknown }[],
+  ttlSeconds: number,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const pipeline = cacheRedis.pipeline();
+  for (const { key, value } of entries) {
+    pipeline.set(key, JSON.stringify(value), 'EX', ttlSeconds);
+  }
+  await pipeline.exec();
 }
 
 export async function cacheDel(key: string): Promise<void> {

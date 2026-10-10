@@ -6,6 +6,8 @@ import { embeddingWorker } from './queues/embedding.worker';
 import { redisConnection } from './queues/connection';
 import { logger } from './lib/logger';
 import { prisma } from './lib/prisma';
+// Embeddings are generated here, so usage tracking must listen in this process too
+import './events/ai.events';
 
 logger.info('Worker started', { queues: [worker.name, embeddingWorker.name] });
 

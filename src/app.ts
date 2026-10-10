@@ -15,6 +15,7 @@ import { bullBoardAdapter } from './config/bull-board';
 import { verifyWebhookSignature } from './middleware/verifyWebhook';
 import './events/cache.events';
 import './events/security.events';
+import './events/ai.events';
 import { sanitizeInput } from './middleware/sanitize';
 import { requestLogger } from './middleware/requestLogger';
 import { metricsRegistry } from './lib/metrics';

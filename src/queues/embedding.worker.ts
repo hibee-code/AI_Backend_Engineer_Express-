@@ -1,20 +1,14 @@
 import { Worker } from 'bullmq';
 import { redisConnection } from './connection';
-import { openaiBreaker } from '../lib/http/openai.breaker';
+import { generateEmbeddingCached } from '../services/embedding.service';
 
 // In the worker, configure rate limiting:
 const worker = new Worker(
   'embedding-generation',
   async (job) => {
-    // Call OpenAI through the breaker
-    const response = await openaiBreaker.fire('/embeddings', {
-      input: job.data.text,
-      model: 'text-embedding-3-small',
-    });
-
-    // Return only the vector. BullMQ stores return values in Redis as JSON, and
-    // the full axios response has circular references, so returning it fails the job.
-    return response.data.data[0].embedding as number[];
+    // Goes through the embedding service: cache, circuit breaker, logging, cost event.
+    // Returns only the vector, which BullMQ stores in Redis as JSON.
+    return generateEmbeddingCached(job.data.text, { correlationId: job.data.correlationId });
   },
   {
     connection: redisConnection,

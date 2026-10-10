@@ -1,11 +1,14 @@
 generator client {
-  provider     = "prisma-client"
-  output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  moduleFormat    = "cjs"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
+// The connection URL lives in prisma.config.ts (Prisma 7 no longer reads it here)
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [vector]
 }
 
 model User {
@@ -53,10 +56,16 @@ model Chunk {
   index      Int // Position within the document (0-based)
   content    String
   tokenCount Int
+  // pgvector column (text-embedding-3-small = 1536 dims). Prisma can't read or
+  // write this type, so embedding.service.ts accesses it with raw SQL.
+  // Its HNSW index (Chunk_embedding_idx) is created by raw-SQL migration and
+  // `migrate dev` will try to drop it: always use --create-only and remove
+  // any DROP INDEX "Chunk_embedding_idx" before applying.
+  embedding  Unsupported("vector(1536)")?
   createdAt  DateTime @default(now())
   document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  @@unique([documentId, index])
+  @@index([documentId])
 }
 
 model Message {
